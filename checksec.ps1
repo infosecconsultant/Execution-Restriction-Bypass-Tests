@@ -82,43 +82,40 @@ function Execute-And-Cleanup {
     $execName = Split-Path -Path $ExecutablePath -Leaf
     $execPath = Join-Path -Path $path -ChildPath $execName
     Write-Verbose "Attempting to copy $ExecutablePath to $execPath."
+    
     try {
         Copy-Item -Path $ExecutablePath -Destination $execPath -ErrorAction Stop
-        if (Test-Path $execPath) {
-            Write-Verbose "Successfully copied executable to $execPath."
-            $process = Start-Process -FilePath $execPath -PassThru -ErrorAction Stop
-            Write-Verbose "Process with ID $($process.Id) started, waiting for exit."
-            $process.WaitForExit($ExecutionTimeoutSeconds * 500) | Out-Null
-            if (-not $process.HasExited) {
-                Write-Verbose "Process with ID $($process.Id) did not exit on its own, attempting to terminate."
-                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-            }
-            Write-Verbose "Executable process handled."
-            Remove-Item -Path $execPath -Force
-            Write-Verbose "Executable removed."
-            return $true
-        } else {
-            Write-Warning "Executable not found after copy at $execPath."
+        Write-Verbose "Successfully copied executable to $execPath."
+        $process = Start-Process -FilePath $execPath -PassThru -ErrorAction Stop
+        Write-Verbose "Process with ID $($process.Id) started, waiting for exit."
+        $process.WaitForExit($ExecutionTimeoutSeconds * 500) | Out-Null
+        if (-not $process.HasExited) {
+            Write-Verbose "Process with ID $($process.Id) did not exit on its own, attempting to terminate."
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
         }
+        return $true
     } catch {
-        Write-Error "Error in Execute-And-Cleanup for ${path}: $_"
+        Write-Warning "Execution failed or was skipped in: $execPath. $_"
         if ($failexec) {
             $script:executionFailDirectories += $path
         }
+        return $false
+    } finally {
+        if (Test-Path $execPath) {
+            Write-Verbose "Attempting to remove executable: $execPath."
+            Remove-Item -Path $execPath -Force -ErrorAction SilentlyContinue
+        }
     }
-
-    return $false
 }
 
 # Main script logic
 Write-Verbose "Starting scan for write permissions in $RootDirectory."
+# Include the root directory in the list of directories to check
 $directories = Get-ChildItem -Path $RootDirectory -Recurse -Directory -ErrorAction SilentlyContinue
+$rootItem = Get-Item -Path $RootDirectory
+$allItems = @($rootItem) + $directories
 
-if (-not $directories) {
-    Write-Verbose "No directories found under $RootDirectory."
-}
-
-foreach ($dir in $directories) {
+foreach ($dir in $allItems) {
     Write-Verbose "Checking permissions for directory: $($dir.FullName)"
     $hasWritePermission = Test-WritePermission -path $dir.FullName
     if ($hasWritePermission) {
