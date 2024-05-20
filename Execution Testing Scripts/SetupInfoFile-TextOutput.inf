@@ -1,0 +1,13 @@
+[Version]
+Signature="$Windows NT$"
+
+[DefaultInstall]
+CustomDestination=CustDestSectionAllUsers
+RunPreSetupCommands=HelloWorldSection
+
+[HelloWorldSection]
+0x01, "Notepad.exe", "HelloWorld.txt"
+AddReg=WriteToLog
+
+[WriteToLog]
+HKLM, SOFTWARE\HelloWorld, "Executed", 0x00010001, %DATE% %TIME% - SetupInfoFile-TextOuput.inf executed successfully

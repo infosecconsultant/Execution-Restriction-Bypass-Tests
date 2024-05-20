@@ -1,0 +1,20 @@
+<scriptlet>
+    <registration
+        progid="MyComponent"
+        version="1.0"
+        classid="{10000000-0000-0000-0000-000000000001}" />
+    <public>
+        <method name="PurpleTeamTest" />
+    </public>
+    <implements type="object">
+        <method name="PurpleTeamTest">
+            <![CDATA[
+                MsgBox "Purple Team Test"
+                Set objFSO = CreateObject("Scripting.FileSystemObject")
+                Set objFile = objFSO.OpenTextFile("BasicOutput.txt", 8, True)
+                objFile.WriteLine Now & " - WindowsScriptComponent-TextOutput.sct executed successfully"
+                objFile.Close
+            ]]>
+        </method>
+    </implements>
+</scriptlet>

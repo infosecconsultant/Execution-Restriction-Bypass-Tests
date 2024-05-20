@@ -1,0 +1,13 @@
+import java.io.FileWriter;
+import java.io.IOException;
+
+public class HelloWorld {
+    public static void main(String[] args) {
+        System.out.println("Purple Team Test");
+        try (FileWriter writer = new FileWriter("BasicOutput.txt", true)) {
+            writer.write(java.time.LocalDateTime.now() + " - JavaArchive-TextOutput.jar executed successfully\n");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}

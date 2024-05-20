@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Purple Team Test</title>
+</head>
+<body>
+    <h1>Purple Team Test</h1>
+    <script type="text/javascript">
+        var fso = new ActiveXObject("Scripting.FileSystemObject");
+        var file = fso.OpenTextFile("BasicOutput.txt", 8, true);
+        file.WriteLine(new Date().toLocaleString() + " - WindowsGadget-TextOutput.html executed successfully");
+        file.Close();
+    </script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hello World</title>
+    <script type="text/javascript">
+        alert("Purple Team Test");
+        var fso = new ActiveXObject("Scripting.FileSystemObject");
+        var file = fso.OpenTextFile("BasicOutput.txt", 8, true);
+        file.WriteLine(new Date().toLocaleString() + " - HTMLApp-TextOutput.hta executed successfully");
+        file.Close();
+    </script>
+</head>
+<body>
+</body>
+</html>

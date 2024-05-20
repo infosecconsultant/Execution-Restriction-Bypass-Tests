@@ -1,0 +1,13 @@
+import java.io.FileWriter;
+import java.io.IOException;
+
+public class StartCalc {
+    public static void main(String[] args) throws IOException {
+        Runtime.getRuntime().exec("calc.exe");
+        try (FileWriter writer = new FileWriter("BasicExecution.txt", true)) {
+            writer.write(java.time.LocalDateTime.now() + " - JavaArchive-ExecuteCalc.jar executed successfully\n");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}

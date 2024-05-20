@@ -1,0 +1,6 @@
+<PSConsoleFile>
+    <PSVersion>5.1</PSVersion>
+    <ConsoleConfiguration>
+        <StartupScript>PowerShellConsole-TextOutput.ps1</StartupScript>
+    </ConsoleConfiguration>
+</PSConsoleFile>

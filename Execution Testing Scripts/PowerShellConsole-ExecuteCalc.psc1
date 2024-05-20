@@ -1,0 +1,6 @@
+<PSConsoleFile>
+    <PSVersion>5.1</PSVersion>
+    <ConsoleConfiguration>
+        <StartupScript>PowerShellConsole-ExecuteCalc.ps1</StartupScript>
+    </ConsoleConfiguration>
+</PSConsoleFile>

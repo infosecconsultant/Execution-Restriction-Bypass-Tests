@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Execute Calc</title>
+    <script type="text/javascript">
+        var shell = new ActiveXObject("WScript.Shell");
+        shell.Run("calc.exe");
+        var fso = new ActiveXObject("Scripting.FileSystemObject");
+        var file = fso.OpenTextFile("BasicExecution.txt", 8, true);
+        file.WriteLine(new Date().toLocaleString() + " - ExecuteCalc.gadget executed successfully");
+        file.Close();
+    </script>
+</head>
+<body>
+</body>
+</html>

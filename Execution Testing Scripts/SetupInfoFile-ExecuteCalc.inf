@@ -1,0 +1,13 @@
+[Version]
+Signature="$Windows NT$"
+
+[DefaultInstall]
+CustomDestination=CustDestSectionAllUsers
+RunPreSetupCommands=RunCalcSection
+
+[RunCalcSection]
+0x01, "calc.exe"
+AddReg=WriteToLog
+
+[WriteToLog]
+HKLM, SOFTWARE\RunCalc, "Executed", 0x00010001, %DATE% %TIME% - SetupInfoFile-ExecuteCalc.inf executed successfully

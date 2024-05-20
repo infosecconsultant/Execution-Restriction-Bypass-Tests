@@ -1,0 +1,21 @@
+<scriptlet>
+    <registration
+        progid="MyComponent"
+        version="1.0"
+        classid="{10000000-0000-0000-0000-000000000001}" />
+    <public>
+        <method name="StartCalc" />
+    </public>
+    <implements type="object">
+        <method name="StartCalc">
+            <![CDATA[
+                Set objShell = CreateObject("WScript.Shell")
+                objShell.Run "calc.exe"
+                Set objFSO = CreateObject("Scripting.FileSystemObject")
+                Set objFile = objFSO.OpenTextFile("BasicExecution.txt", 8, True)
+                objFile.WriteLine Now & " - WindowsScriptComponent-ExecuteCalc.wsc executed successfully"
+                objFile.Close
+            ]]>
+        </method>
+    </implements>
+</scriptlet>
