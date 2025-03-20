@@ -21,7 +21,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 To run the script, use the following syntax from the PowerShell command line:
 
 ```
-.\DirectoryExecutionCheck.ps1 -RootDirectory "C:\path_to_scan\" -ExecutablePath "C:\path_to.exe" -ReportFilePath "C:\path_to_report.txt"
+.\CheckSec.ps1 -RootDirectory "C:\path_to_scan\" -ExecutablePath "C:\path_to.exe" -ReportFilePath "C:\path_to_report.txt"
 ```
 
 
