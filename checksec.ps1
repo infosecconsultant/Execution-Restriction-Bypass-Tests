@@ -1,167 +1,247 @@
-#A simple script to check and test for application whitelisting direcotries that have been inadvertently whitelisted that also allow writes in the context of a user you control.
+<#
+.SYNOPSIS
+    Scan directories for write permissions, optionally copy & run a payload,
+    and (optionally) execute every script found under an "Execution Testing Scripts" folder.
+
+.EXAMPLE
+    .\checksec.ps1 -RootDirectory "C:\Targets" `
+                          -ExecutablePath "C:\payload\runner.exe" `
+                          -ReportFilePath "C:\report.txt" `
+                          -CheckMode Active `
+                          -RunTestScripts `
+                          -TestScriptsDirectory "C:\Execution Testing Scripts"
+#>
 
 param(
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [string]$RootDirectory,
 
     [string]$ExecutablePath,
 
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [string]$ReportFilePath,
 
     [int]$ExecutionTimeoutSeconds = 2,
+
     [ValidateSet("Passive", "Active")]
     [string]$CheckMode = "Passive",
+
+    [switch]$RunTestScripts,
+    [string]$TestScriptsDirectory,
+    [string[]]$ScriptExtensions = @(
+    # executable “payload”‑style
+    '.exe', '.dll', '.scr', '.cpl', '.hta', '.jar',
+
+    # Windows / CMD / PS / WSH
+    '.bat', '.cmd',
+    '.ps1', '.psc1', '.psm1',
+    '.js',  '.vbs',
+    '.ws',  '.wsf', '.wsh',
+    '.sct', '.wsc',
+
+    # installers / setup
+    '.inf',
+
+    # source files you still want logged / tried
+    '.asm', '.c', '.cpp', '.cs', '.vb'
+    ),
 
     [switch]$failexec,
     [switch]$failwrite
 )
 
-# Check if the user is running as administrator
+# --- GUARD RAILS FOR NEW FEATURE ---
+if ($RunTestScripts -and -not $TestScriptsDirectory) {
+    throw "Parameter -TestScriptsDirectory is required when -RunTestScripts is specified."
+}
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Helper: Am I admin?
 function Test-IsAdmin {
     $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = new-object System.Security.Principal.WindowsPrincipal($currentUser)
+    $principal   = [System.Security.Principal.WindowsPrincipal]::new($currentUser)
     return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-# Get the current username
+# Helper: Which user?
 function Get-CurrentUsername {
-    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-    return $currentUser.Name
+    return [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 }
 
-# Check for admin rights at the start of the script
 if (Test-IsAdmin) {
     Write-Warning "The script is running with administrator permissions."
 }
+Write-Verbose "Running as: $(Get-CurrentUsername)"
 
-# Report the username under which the script is running
-$currentUsername = Get-CurrentUsername
-Write-Verbose "The script is running under the username: $currentUsername"
+# ────────────────────────────────────────────────────────────────────────────────
+# Global collectors
+$script:writeableDirectories            = @()
+$script:executionSuccessDirectories     = @()
+$script:executionFailDirectories        = @()
+$script:writePermissionFailDirectories  = @()
+$script:testScriptExecutionSuccessFiles = @()
+$script:testScriptExecutionFailFiles    = @()
 
-
-# Initialize the results lists at the script scope
-$script:writeableDirectories = @()
-$script:executionSuccessDirectories = @()
-$script:executionFailDirectories = @()
-$script:writePermissionFailDirectories = @()
-
-# Function to test write permission
+# ────────────────────────────────────────────────────────────────────────────────
+# Check write permission
 function Test-WritePermission {
-    param ([string]$path)
+    param([string]$Path)
 
-    $testFilePath = Join-Path -Path $path -ChildPath "testperm.tmp"
+    $testFilePath      = Join-Path $Path "testperm.tmp"
     $hasWritePermission = $false
-
     try {
-        New-Item -Path $testFilePath -ItemType "file" -Force -ErrorAction Stop | Out-Null
+        New-Item -Path $testFilePath -ItemType File -Force -ErrorAction Stop | Out-Null
         Remove-Item -Path $testFilePath -Force -ErrorAction Stop
         $hasWritePermission = $true
-        Write-Verbose "Write permission confirmed for ${path}."
+        Write-Verbose "Write permission confirmed for $Path"
     }
     catch [System.UnauthorizedAccessException] {
-        Write-Warning "Unauthorized access to the permissions of ${path}, skipping..."
-        if ($failwrite) {
-            $script:writePermissionFailDirectories += $path
-        }
+        Write-Warning "Unauthorized access for $Path"
+        if ($failwrite) { $script:writePermissionFailDirectories += $Path }
     }
     catch {
-        Write-Error "Error testing permissions for ${path}: $_"
-        if ($failwrite) {
-            $script:writePermissionFailDirectories += $path
-        }
+        Write-Error "Error testing $Path : $_"
+        if ($failwrite) { $script:writePermissionFailDirectories += $Path }
     }
-
     return $hasWritePermission
 }
 
-# Function to execute and remove the executable
+# ────────────────────────────────────────────────────────────────────────────────
+# Copy payload → run → clean
 function Execute-And-Cleanup {
-    param ([string]$path)
+    param([string]$Path)
 
-    $execName = Split-Path -Path $ExecutablePath -Leaf
-    $execPath = Join-Path -Path $path -ChildPath $execName
-    Write-Verbose "Attempting to copy $ExecutablePath to $execPath."
-    
+    $execName = Split-Path $ExecutablePath -Leaf
+    $execPath = Join-Path $Path $execName
+    Write-Verbose "Copying $ExecutablePath → $execPath"
+
     try {
         Copy-Item -Path $ExecutablePath -Destination $execPath -ErrorAction Stop
-        Write-Verbose "Successfully copied executable to $execPath."
         $process = Start-Process -FilePath $execPath -PassThru -ErrorAction Stop
-        Write-Verbose "Process with ID $($process.Id) started, waiting for exit."
-        $process.WaitForExit($ExecutionTimeoutSeconds * 500) | Out-Null
+        $process.WaitForExit($ExecutionTimeoutSeconds * 1000) | Out-Null
         if (-not $process.HasExited) {
-            Write-Verbose "Process with ID $($process.Id) did not exit on its own, attempting to terminate."
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
         }
         return $true
-    } catch {
-        Write-Warning "Execution failed or was skipped in: $execPath. $_"
-        if ($failexec) {
-            $script:executionFailDirectories += $path
-        }
+    }
+    catch {
+        Write-Warning "Execution failed in $Path : $_"
+        if ($failexec) { $script:executionFailDirectories += $Path }
         return $false
-    } finally {
+    }
+    finally {
         if (Test-Path $execPath) {
-            Write-Verbose "Attempting to remove executable: $execPath."
             Remove-Item -Path $execPath -Force -ErrorAction SilentlyContinue
         }
     }
 }
 
-# Main script logic
-Write-Verbose "Starting scan for write permissions in $RootDirectory."
-# Include the root directory in the list of directories to check
-$directories = Get-ChildItem -Path $RootDirectory -Recurse -Directory -ErrorAction SilentlyContinue
-$rootItem = Get-Item -Path $RootDirectory
-$allItems = @($rootItem) + $directories
+# ────────────────────────────────────────────────────────────────────────────────
+# NEW: Fire test script with best‑guess host
+function Execute-TestScript {
+    param([string]$ScriptPath)
 
-foreach ($dir in $allItems) {
-    Write-Verbose "Checking permissions for directory: $($dir.FullName)"
-    $hasWritePermission = Test-WritePermission -path $dir.FullName
-    if ($hasWritePermission) {
-        Write-Verbose "Directory is writeable: $($dir.FullName)"
-        $script:writeableDirectories += $dir.FullName
-        if ($CheckMode -eq "Active") {
-            Write-Verbose "Attempting to execute and cleanup in: $($dir.FullName)"
-            $executionSucceeded = Execute-And-Cleanup -path $dir.FullName
-            if ($executionSucceeded) {
-                Write-Verbose "Execution succeeded in: $($dir.FullName)"
-                $script:executionSuccessDirectories += $dir.FullName
-            } else {
-                Write-Warning "Execution failed or was skipped in: $($dir.FullName)"
+    try {
+        $ext = ([IO.Path]::GetExtension($ScriptPath)).ToLowerInvariant()
+        switch ($ext) {
+        
+            '.bat' { $proc = Start‑Process 'cmd.exe'  -Arg "/c","`"$ScriptPath`"" -Win Hidden -PassThru -EA Stop }
+            '.cmd' { $proc = Start‑Process 'cmd.exe'  -Arg "/c","`"$ScriptPath`"" -Win Hidden -PassThru -EA Stop }
+        
+            '.psc1'{ $proc = Start‑Process 'powershell.exe' -Arg '-NoLogo','-PSConsoleFile',"`"$ScriptPath`"" -Win Hidden -PassThru -EA Stop }
+            '.psm1'{ $proc = Start‑Process 'powershell.exe' -Arg '-NoLogo','-Command',"Import‑Module -Force `"$ScriptPath`""         -Win Hidden -PassThru -EA Stop }
+        
+            '.jar' { $proc = Start‑Process 'java.exe' -Arg '-jar',"`"$ScriptPath`"" -Win Hidden -PassThru -EA Stop }
+        
+            '.ws'  | '.wsf' | '.wsh' { $proc = Start‑Process 'wscript.exe' -Arg "`"$ScriptPath`"" -Win Hidden -PassThru -EA Stop }
+        
+            '.inf' { $proc = Start‑Process 'rundll32.exe' -Arg 'advpack.dll,LaunchINFSection',"`"$ScriptPath`",DefaultInstall" -PassThru -EA Stop }
+        
+            '.sct' | '.wsc' { $proc = Start‑Process 'regsvr32.exe' -Arg '/s','/n','/u',"/i:`"$ScriptPath`"",'scrobj.dll' -PassThru -EA Stop }
+        
+            default {            # .exe, .scr, .dll, .asm, .c, .cpp, .cs, .vb, anything unknown
+                $proc = Start‑Process $ScriptPath -Win Hidden -PassThru -EA Stop
             }
         }
-    } else {
-        Write-Warning "No write permissions or skipping directory due to errors: $($dir.FullName)"
+        $proc.WaitForExit($ExecutionTimeoutSeconds * 1000) | Out-Null
+        if (-not $proc.HasExited) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        }
+        return $true
+    }
+    catch {
+        Write-Warning "Script failed: $ScriptPath : $_"
+        return $false
     }
 }
 
-Write-Verbose "Finished checking directories. Generating report."
+# ────────────────────────────────────────────────────────────────────────────────
+# 1 WRITE PERMISSION SCAN  ────────────────────────────────────────────────
+Write-Verbose "Scanning $RootDirectory for write permissions."
 
-# Generate the report content
-$reportContent = "Writeable Directories:`n" +
-                 ($writeableDirectories -join "`n") +
-                 "`n`nDirectories Where Execution Succeeded:`n" +
-                 ($executionSuccessDirectories -join "`n")
+$directories = Get-ChildItem -Path $RootDirectory -Recurse -Directory -ErrorAction SilentlyContinue
+$allItems    = @((Get-Item -LiteralPath $RootDirectory)) + $directories
 
-# Append failed execution directories if switch is used
+foreach ($dir in $allItems) {
+    if (Test-WritePermission -Path $dir.FullName) {
+        $script:writeableDirectories += $dir.FullName
+        if ($CheckMode -eq "Active" -and $ExecutablePath) {
+            if (Execute-And-Cleanup -Path $dir.FullName) {
+                $script:executionSuccessDirectories += $dir.FullName
+            }
+        }
+    }
+}
+
+# 2 OPTIONAL TEST SCRIPT EXECUTION  ──────────────────────────────────────
+if ($RunTestScripts) {
+    Write-Verbose "Executing scripts under $TestScriptsDirectory ..."
+    $scriptFiles = Get-ChildItem -Path $TestScriptsDirectory -Recurse -File -ErrorAction SilentlyContinue |
+                   Where-Object { $ScriptExtensions -contains $_.Extension.ToLower() }
+
+    foreach ($file in $scriptFiles) {
+        if (Execute-TestScript -ScriptPath $file.FullName) {
+            $script:testScriptExecutionSuccessFiles += $file.FullName
+        }
+        else {
+            $script:testScriptExecutionFailFiles += $file.FullName
+        }
+    }
+    Write-Verbose "Completed execution of $($scriptFiles.Count) test scripts."
+}
+
+# ────────────────────────────────────────────────────────────────────────────────
+# REPORT  ────────────────────────────────────────────────────────────────────────
+Write-Verbose "Generating report …"
+
+$reportContent  = "Writeable Directories:`n" +
+                  ($writeableDirectories -join "`n") +
+                  "`n`nDirectories Where Execution Succeeded:`n" +
+                  ($executionSuccessDirectories -join "`n")
+
 if ($failexec) {
-    $reportContent += "`n`nDirectories Where Execution Failed:`n" + ($executionFailDirectories -join "`n")
+    $reportContent += "`n`nDirectories Where Execution Failed:`n" +
+                      ($executionFailDirectories -join "`n")
 }
-
-# Append failed write permission directories if switch is used
 if ($failwrite) {
-    $reportContent += "`n`nDirectories Where Write Permission Failed:`n" + ($writePermissionFailDirectories -join "`n")
+    $reportContent += "`n`nDirectories Where Write Permission Check Failed:`n" +
+                      ($writePermissionFailDirectories -join "`n")
+}
+if ($RunTestScripts) {
+    $reportContent += "`n`nTest Scripts Executed Successfully:`n" +
+                      ($testScriptExecutionSuccessFiles -join "`n")
+    if ($testScriptExecutionFailFiles.Count -gt 0) {
+        $reportContent += "`n`nTest Scripts That Failed:`n" +
+                          ($testScriptExecutionFailFiles -join "`n")
+    }
 }
 
-# Write the report content to the specified report file
 $reportContent | Out-File -FilePath $ReportFilePath -Encoding UTF8
 
-# Output the report content to the console
 if ($VerbosePreference -eq 'Continue') {
-    Write-Host "Report Content:"
+    Write-Host "`n===== REPORT ====="
     Write-Host $reportContent
 }
 
-Write-Verbose "Report has been saved to $ReportFilePath."
-Write-Verbose "Script execution complete."
+Write-Verbose "Report saved to $ReportFilePath"
+Write-Verbose "Script complete."
